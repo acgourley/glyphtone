@@ -680,7 +680,7 @@ $("resetBtn").addEventListener("click", () => {
 });
 
 function loadExampleImage(showError: boolean) {
-  return fetch("/examples/shannon.jpg")
+  return fetch("examples/shannon.jpg")
     .then((r) => r.blob())
     .then((blob) =>
       loadImageFile(new File([blob], "shannon.jpg", { type: "image/jpeg" })),
