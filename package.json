@@ -1,0 +1,20 @@
+{
+  "name": "glyphtone",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Halftone-via-glyphs: portraits rendered with proportional fonts.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@chenglou/pretext": "^0.0.7"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10"
+  }
+}
