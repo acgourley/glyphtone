@@ -1,5 +1,7 @@
 # Glyphtone
 
+**[Live demo →](https://acgourley.github.io/glyphtone/)**
+
 A halftone made of glyphs. Renders images with proportional fonts, picking each character by its width and ink density.
 
 ## Run locally
