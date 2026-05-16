@@ -8,6 +8,7 @@ export type Settings = {
   gamma: number;
   contrast: number;
   invert: boolean;
+  dither: boolean;
   customFg: string | null;
   customBg: string | null;
   widthSource: 'dom' | 'pretext';
@@ -21,6 +22,7 @@ export const DEFAULT_SETTINGS: Settings = {
   gamma: 1.0,
   contrast: 1.0,
   invert: true,
+  dither: false,
   customFg: null,
   customBg: null,
   widthSource: 'dom',

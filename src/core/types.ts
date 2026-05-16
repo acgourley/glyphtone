@@ -45,6 +45,7 @@ export type GlyphtoneOptions = {
   // glyphs that are only a marginally better brightness match. Useful for
   // sets like "◤◥◢◣" where every glyph has the same overall density.
   spatialWeight?: number;
+  dither?: boolean;
   background?: string;
   foreground?: string;
   glyphColor?: (p: GlyphPlacement) => string;

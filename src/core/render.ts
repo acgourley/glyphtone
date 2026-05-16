@@ -20,6 +20,7 @@ export function renderGlyphtone(opts: GlyphtoneOptions): GlyphtoneResult {
     foreground = '#eee',
     glyphColor,
     spatialWeight = 2,
+    dither = false,
   } = opts;
 
   const fontSize = extractFontSizePx(font);
@@ -77,12 +78,20 @@ export function renderGlyphtone(opts: GlyphtoneOptions): GlyphtoneResult {
   // dark regions at the right margin just because they fit.
   const blankGlyph = palette.glyphs.reduce((a, b) => (a.densityNorm <= b.densityNorm ? a : b));
 
+  // Floyd-Steinberg error buffers in output-pixel space (current and next row).
+  const errCur = dither ? new Float32Array(outW + 2) : null;
+  const errNext = dither ? new Float32Array(outW + 2) : null;
+
   let glyphsPlaced = 0;
   for (let y = 0; y + lineHeight <= outH; y += lineHeight) {
     let x = 0;
     while (x < outW) {
+      // Accumulated dither error at this cell's x position.
+      const accErr = errCur ? errCur[Math.min(Math.round(x), outW + 1)] : 0;
+
       let best = null;
       let bestErr = Infinity;
+      let bestAdjTgt = 0;
       // When spatial matching is on, also probe the 4 quadrants of the cell
       // and form a centered signature comparable to each glyph's quadrantSig.
       // We compute these once per (x, candWidth) pair — but cand.width varies,
@@ -99,8 +108,9 @@ export function renderGlyphtone(opts: GlyphtoneOptions): GlyphtoneResult {
         const x1 = probeRight * sx;
         const y1 = (y + lineHeight) * sy;
         const b = averageOver(integral.luminance, x0, y0, x1, y1);
-        const target = targetForBrightness(b);
-        let err = Math.abs(cand.densityNorm - target);
+        const rawTgt = targetForBrightness(b);
+        const adjTgt = dither ? Math.max(0, Math.min(1, rawTgt + accErr)) : rawTgt;
+        let err = Math.abs(cand.densityNorm - adjTgt);
         if (spatialWeight > 0) {
           if (probeRight !== lastProbeRight) {
             const xm = (x0 + x1) / 2;
@@ -133,12 +143,25 @@ export function renderGlyphtone(opts: GlyphtoneOptions): GlyphtoneResult {
         if (err < bestErr) {
           bestErr = err;
           best = cand;
+          bestAdjTgt = adjTgt;
         }
       }
       if (!best) break;
       // If the blank won but doesn't fit, end the row — the background
       // already shows what a trailing space would look like.
       if (best === blankGlyph && x + best.width > outW + 0.5) break;
+
+      // Distribute Floyd-Steinberg quantization error to neighboring cells.
+      if (errCur && errNext) {
+        const quantErr = bestAdjTgt - best.densityNorm;
+        const xi = Math.round(x);
+        const xr = Math.round(x + best.width);   // right neighbor
+        const xl = Math.max(0, Math.round(x - best.width)); // bottom-left neighbor
+        if (xr <= outW + 1) errCur[xr] += quantErr * 7 / 16;
+        if (xl <= outW + 1) errNext[xl] += quantErr * 3 / 16;
+        if (xi <= outW + 1) errNext[xi] += quantErr * 5 / 16;
+        if (xr <= outW + 1) errNext[xr] += quantErr * 1 / 16;
+      }
 
       const placement = makePlacement(best, x, y, integral, sx, sy, lineHeight);
       placements.push(placement);
@@ -150,6 +173,12 @@ export function renderGlyphtone(opts: GlyphtoneOptions): GlyphtoneResult {
       }
       x += best.width;
       glyphsPlaced++;
+    }
+
+    // Advance dither buffers: next row's accumulated error becomes current.
+    if (errCur && errNext) {
+      errCur.set(errNext);
+      errNext.fill(0);
     }
   }
 

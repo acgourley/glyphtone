@@ -44,6 +44,7 @@ app.innerHTML = `
         <input type="range" id="contrast" min="0.5" max="3.0" step="0.05" />
 
         <label class="checkrow"><input type="checkbox" id="invert" /> Invert</label>
+        <label class="checkrow"><input type="checkbox" id="dither" /> Floyd-Steinberg Dithering</label>
 
         <div class="color-row">
           <label for="fgColor">Foreground</label>
@@ -232,6 +233,11 @@ const bindings: Binding[] = [
     el: $<HTMLInputElement>("invert"),
     get: () => settings.invert,
     set: (v) => (settings.invert = !!v),
+  },
+  {
+    el: $<HTMLInputElement>("dither"),
+    get: () => settings.dither,
+    set: (v) => (settings.dither = !!v),
   },
 ];
 
@@ -439,6 +445,7 @@ async function render() {
       gamma: settings.gamma,
       contrast: settings.contrast,
       invert: settings.invert,
+      dither: settings.dither,
       background: effectiveBg(),
       foreground: effectiveFg(),
       // widthSource: settings.widthSource,
@@ -498,6 +505,7 @@ $("downloadBtn").addEventListener("click", () => {
     gamma: settings.gamma,
     contrast: settings.contrast,
     invert: settings.invert,
+    dither: settings.dither,
     background: effectiveBg(),
     foreground: effectiveFg(),
   });
@@ -570,6 +578,7 @@ function buildAnimatedExportHtml(fromSize: number, toSize: number): string {
       gamma: settings.gamma,
       contrast: settings.contrast,
       invert: settings.invert,
+      dither: settings.dither,
       background: bg,
       foreground: fg,
     });
