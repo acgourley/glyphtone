@@ -17,7 +17,6 @@ export const CHAR_PRESETS: Record<string, string> = {
   "Winter Emoji": "❄️🌨️⛄🏔️🧊🌬️❄️⛷️🀩 ",
   "Block halftone": "█▓▒░ ",
   "Bar ramp": "█▇▆▅▄▃▂▁ ",
-  "Geometric fills": "▲▼◆◇○● ",
   "Braille blocks": "⣿⣷⣯⣟⡿⢿⣻⣽ ",
   "Box double": "╬╪╫╠╣╦╩╔╗╚╝║═ ",
   "Box single": "┼┤├┬┴┐└│─ ",

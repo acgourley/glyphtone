@@ -13,11 +13,18 @@ import {
 
 const app = document.getElementById("app")!;
 app.innerHTML = `
+  <div class="mobile-warning" role="status" aria-live="polite">
+    This site is designed for desktop but will work on mobile with some effort. <br/> <br/> Tap controls to adjust things.
+  </div>
+  <nav class="mobile-tabs" role="tablist" aria-label="Switch view">
+    <button type="button" role="tab" id="tabControls" aria-selected="false">Controls</button>
+    <button type="button" role="tab" id="tabPreview" class="active" aria-selected="true">Preview</button>
+  </nav>
   <div class="layout">
     <div class="left-column">
       <aside class="controls">
         <h1>Glyphtone</h1>
-        <p class="hint">A halftone made of glyphs. Drop an image anywhere to begin.</p>
+        <p class="hint">A halftone made of glyphs. Select an image to convert it.</p>
 
         <div class="label-row">
           <label for="imageInput">Input Image</label>
@@ -102,6 +109,9 @@ app.innerHTML = `
       <pre id="output" class="glyphtone-preview"></pre>
     </main>
   </div>
+  <button type="button" id="mobileRandomBtn" class="mobile-random" aria-label="Randomize">
+    <span aria-hidden="true">🎲</span> Random
+  </button>
   <footer class="kbd-help">
     <kbd>←</kbd> <kbd>→</kbd> char set
     &nbsp;·&nbsp;
@@ -126,7 +136,10 @@ const status = $("status");
   let pinned = false;
 
   function show() {
-    if (leaveTimer) { clearTimeout(leaveTimer); leaveTimer = null; }
+    if (leaveTimer) {
+      clearTimeout(leaveTimer);
+      leaveTimer = null;
+    }
     tipBox.hidden = false;
     tipBtn.setAttribute("aria-expanded", "true");
   }
@@ -137,17 +150,35 @@ const status = $("status");
   }
 
   // Hover: show/hide only when not pinned open by a click
-  tipBtn.addEventListener("mouseenter", () => { if (!pinned) show(); });
-  tipBtn.addEventListener("mouseleave", () => { if (!pinned) leaveTimer = setTimeout(hide, 300); });
-  tipBox.addEventListener("mouseenter", () => { if (!pinned && leaveTimer) { clearTimeout(leaveTimer); leaveTimer = null; } });
-  tipBox.addEventListener("mouseleave", () => { if (!pinned) leaveTimer = setTimeout(hide, 300); });
+  tipBtn.addEventListener("mouseenter", () => {
+    if (!pinned) show();
+  });
+  tipBtn.addEventListener("mouseleave", () => {
+    if (!pinned) leaveTimer = setTimeout(hide, 300);
+  });
+  tipBox.addEventListener("mouseenter", () => {
+    if (!pinned && leaveTimer) {
+      clearTimeout(leaveTimer);
+      leaveTimer = null;
+    }
+  });
+  tipBox.addEventListener("mouseleave", () => {
+    if (!pinned) leaveTimer = setTimeout(hide, 300);
+  });
 
   // Click/tap: pin open; click again or click outside to close
   tipBtn.addEventListener("click", (e) => {
     e.stopPropagation();
-    if (pinned) { hide(); } else { pinned = true; show(); }
+    if (pinned) {
+      hide();
+    } else {
+      pinned = true;
+      show();
+    }
   });
-  document.addEventListener("click", () => { if (pinned) hide(); });
+  document.addEventListener("click", () => {
+    if (pinned) hide();
+  });
 }
 
 let settings = loadSettings();
@@ -194,7 +225,9 @@ function syncFontWarning() {
   const gen = ++warningGen;
   const msgs: string[] = [];
   if (!picker.isPortable(settings.fontFamily)) {
-    msgs.push("⚠ This font may not be installed for viewers of the exported HTML — they'll see a fallback.");
+    msgs.push(
+      "⚠ This font may not be installed for viewers of the exported HTML — they'll see a fallback.",
+    );
   }
   // Show the portable-font warning immediately; coverage check needs the
   // font loaded (Google Fonts load lazily) so it runs after fonts.load.
@@ -202,9 +235,17 @@ function syncFontWarning() {
 
   const font = `${settings.fontSize}px "${settings.fontFamily}", serif`;
   (async () => {
-    try { await document.fonts.load(font); } catch { /* offline — best-effort */ }
+    try {
+      await document.fonts.load(font);
+    } catch {
+      /* offline — best-effort */
+    }
     if (gen !== warningGen) return;
-    const missing = findMissingGlyphs(settings.fontFamily, settings.fontSize, settings.chars);
+    const missing = findMissingGlyphs(
+      settings.fontFamily,
+      settings.fontSize,
+      settings.chars,
+    );
     if (gen !== warningGen) return;
     if (missing.length) {
       const list = missing.join(" ");
@@ -289,6 +330,28 @@ function randomizePreset() {
     next = Math.floor(Math.random() * names.length);
   }
   applyPreset(names[next]);
+}
+
+function randomizeAll() {
+  randomizePreset();
+  picker.random();
+  // Re-roll the font a few times to dodge uncovered-glyph combos (e.g.
+  // Noto Serif + Geometric fills). If the candidate font isn't loaded yet
+  // (Google Fonts are lazy) we can't measure coverage — accept the roll.
+  for (let i = 0; i < 6; i++) {
+    const spec = `${settings.fontSize}px "${settings.fontFamily}"`;
+    if (!document.fonts.check(spec)) break;
+    if (
+      findMissingGlyphs(
+        settings.fontFamily,
+        settings.fontSize,
+        settings.chars,
+      ).length === 0
+    )
+      break;
+    picker.random();
+  }
+  persistAndRender();
 }
 
 // ---------- bind range / text / checkbox controls ----------
@@ -466,18 +529,7 @@ window.addEventListener("keydown", (e) => {
     picker.cycle(1);
   } else if (e.key === "r" || e.key === "R") {
     e.preventDefault();
-    randomizePreset();
-    picker.random();
-    // Re-roll the font a few times to dodge uncovered-glyph combos (e.g.
-    // Noto Serif + Geometric fills). If the candidate font isn't loaded yet
-    // (Google Fonts are lazy) we can't measure coverage — accept the roll.
-    for (let i = 0; i < 6; i++) {
-      const spec = `${settings.fontSize}px "${settings.fontFamily}"`;
-      if (!document.fonts.check(spec)) break;
-      if (findMissingGlyphs(settings.fontFamily, settings.fontSize, settings.chars).length === 0) break;
-      picker.random();
-    }
-    persistAndRender();
+    randomizeAll();
   }
 });
 
@@ -558,7 +610,11 @@ async function render() {
   // Force the woff2 fetch for @font-face fonts (Google Fonts only load on
   // first use). Without this, the first render after picking a remote font
   // measures glyph widths against the serif fallback and lays out wrong.
-  try { await document.fonts.load(font); } catch { /* offline / 404 — fall through */ }
+  try {
+    await document.fonts.load(font);
+  } catch {
+    /* offline / 404 — fall through */
+  }
   await document.fonts.ready;
   try {
     const t0 = performance.now();
@@ -585,6 +641,7 @@ async function render() {
     output.style.lineHeight = `${result.lineHeight}px`;
     output.style.color = effectiveFg();
     output.style.background = effectiveBg();
+    fitOutputToPreview();
 
     status.textContent = `${result.paletteSize} glyphs measured, ${result.glyphsPlaced} placed (${(t1 - t0).toFixed(1)}ms).`;
   } catch (err) {
@@ -661,8 +718,8 @@ $("exportAnimHtmlBtn").addEventListener("click", () => {
     status.textContent = "Load an image first.";
     return;
   }
-  const fromSize = parseInt(($<HTMLInputElement>("animFromSize")).value, 10);
-  const toSize = parseInt(($<HTMLInputElement>("animToSize")).value, 10);
+  const fromSize = parseInt($<HTMLInputElement>("animFromSize").value, 10);
+  const toSize = parseInt($<HTMLInputElement>("animToSize").value, 10);
   if (isNaN(fromSize) || isNaN(toSize) || fromSize < 1 || toSize < 1) {
     status.textContent = "Enter valid font sizes.";
     return;
@@ -701,7 +758,11 @@ function buildAnimatedExportHtml(fromSize: number, toSize: number): string {
   const fg = effectiveFg();
   const step = fromSize <= toSize ? 1 : -1;
   const frames: string[] = [];
-  for (let size = fromSize; step > 0 ? size <= toSize : size >= toSize; size += step) {
+  for (
+    let size = fromSize;
+    step > 0 ? size <= toSize : size >= toSize;
+    size += step
+  ) {
     const font = `${size}px "${settings.fontFamily}", serif`;
     const result = renderGlyphtone({
       source: sourceImage!,
@@ -773,7 +834,9 @@ ${frames.join("\n")}
 }
 
 function buildExportHtml(): string {
-  const text = placementsToRows(lastResult!.placements).map(escapeHtml).join("\n");
+  const text = placementsToRows(lastResult!.placements)
+    .map(escapeHtml)
+    .join("\n");
   const bg = effectiveBg();
   const fg = effectiveFg();
   const lineHeight = lastResult!.lineHeight;
@@ -835,6 +898,57 @@ function loadExampleImage(showError: boolean) {
 }
 
 $("loadExampleBtn").addEventListener("click", () => loadExampleImage(true));
+
+// On narrow viewports the rendered <pre> is usually wider than the screen
+// (output width defaults to 900px). Scale it down with CSS `zoom` so the whole
+// image is visible by default. Users can still pinch to zoom in for detail.
+function fitOutputToPreview() {
+  // Reset before measuring so we read the natural width.
+  output.style.zoom = "";
+  if (window.innerWidth > 720 || !output.textContent) return;
+  // While Controls mode is active the preview pane is display:none and
+  // clientWidth reads 0 — measuring then would write a junk zoom value.
+  const avail = previewArea.clientWidth - 16; // matches mobile preview padding
+  if (avail <= 0) return;
+  const natural = output.scrollWidth;
+  if (natural > avail) {
+    output.style.zoom = String(avail / natural);
+  }
+}
+window.addEventListener("resize", fitOutputToPreview);
+
+// ---------- mobile controls/preview tab toggle ----------
+{
+  const tabControls = $<HTMLButtonElement>("tabControls");
+  const tabPreview = $<HTMLButtonElement>("tabPreview");
+  function setMode(mode: "controls" | "preview") {
+    document.body.classList.toggle("mode-preview", mode === "preview");
+    document.body.classList.toggle("mode-controls", mode === "controls");
+    tabControls.classList.toggle("active", mode === "controls");
+    tabPreview.classList.toggle("active", mode === "preview");
+    tabControls.setAttribute(
+      "aria-selected",
+      mode === "controls" ? "true" : "false",
+    );
+    tabPreview.setAttribute(
+      "aria-selected",
+      mode === "preview" ? "true" : "false",
+    );
+  }
+  tabControls.addEventListener("click", () => setMode("controls"));
+  tabPreview.addEventListener("click", () => {
+    setMode("preview");
+    // Re-fit after the preview pane becomes visible — its clientWidth was 0
+    // while it was display:none, so any fit attempt during Controls mode was
+    // a no-op and the stale zoom may not match the current settings.
+    fitOutputToPreview();
+  });
+  setMode("preview");
+}
+
+$<HTMLButtonElement>("mobileRandomBtn").addEventListener("click", () => {
+  randomizeAll();
+});
 
 // ---------- boot ----------
 
