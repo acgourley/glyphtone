@@ -1,7 +1,9 @@
-import { DEFAULT_FONTS } from '../data/default-fonts';
+import { DEFAULT_FONTS, UNIVERSAL_FONTS } from '../data/default-fonts';
+import { GOOGLE_FONT_NAMES } from '../data/google-fonts';
 
 export type FontPickerOpts = {
   initial: string;
+  allowNonUniversal: boolean;
   onChange: (font: string) => void;
 };
 
@@ -11,10 +13,26 @@ export type FontPicker = {
   setValue: (v: string) => void;
   cycle: (dir: number) => void;
   random: () => void;
+  setAllowNonUniversal: (b: boolean) => void;
+  isPortable: (name: string) => boolean;
 };
 
+// Fonts that are safe to use without an installed-locally requirement: either
+// shipped with virtually every OS, or loaded via @font-face from Google Fonts
+// (the export emits the corresponding stylesheet link).
+const PORTABLE_FONTS: readonly string[] = [...UNIVERSAL_FONTS, ...GOOGLE_FONT_NAMES];
+const PORTABLE_SET = new Set(PORTABLE_FONTS.map(f => f.toLowerCase()));
+
 export function createFontPicker(opts: FontPickerOpts): FontPicker {
-  let fontList: string[] = [...DEFAULT_FONTS];
+  let allowNonUniversal = opts.allowNonUniversal;
+  let installedDefaults: string[] = [...DEFAULT_FONTS];
+  let browsedAll: string[] | null = null;
+  let fontList: string[] = computeFontList();
+
+  function computeFontList(): string[] {
+    if (!allowNonUniversal) return [...PORTABLE_FONTS];
+    return browsedAll ?? installedDefaults;
+  }
   let activeIdx = -1;
   let preBrowseValue = '';
   let clearedByBrowse = false;
@@ -140,13 +158,16 @@ export function createFontPicker(opts: FontPickerOpts): FontPicker {
       root.classList.remove('open');
       return;
     }
-    const w = window as unknown as { queryLocalFonts?: () => Promise<{ family: string }[]> };
-    if (w.queryLocalFonts) {
-      try {
-        const fonts = await w.queryLocalFonts();
-        fontList = [...new Set(fonts.map(f => f.family))].sort();
-      } catch {
-        // permission denied — fall through with current fontList
+    if (allowNonUniversal) {
+      const w = window as unknown as { queryLocalFonts?: () => Promise<{ family: string }[]> };
+      if (w.queryLocalFonts) {
+        try {
+          const fonts = await w.queryLocalFonts();
+          browsedAll = [...new Set(fonts.map(f => f.family))].sort();
+          fontList = computeFontList();
+        } catch {
+          // permission denied — fall through with current fontList
+        }
       }
     }
     preBrowseValue = input.value;
@@ -179,8 +200,16 @@ export function createFontPicker(opts: FontPickerOpts): FontPicker {
   }
 
   document.fonts.ready.then(() => {
-    fontList = DEFAULT_FONTS.filter(fontInstalled);
+    installedDefaults = DEFAULT_FONTS.filter(fontInstalled);
+    fontList = computeFontList();
   });
+
+  function applyAllowState() {
+    toggle.style.display = allowNonUniversal ? '' : 'none';
+    if (!allowNonUniversal) browsedAll = null;
+    fontList = computeFontList();
+  }
+  applyAllowState();
 
   return {
     el: root,
@@ -188,5 +217,10 @@ export function createFontPicker(opts: FontPickerOpts): FontPicker {
     setValue: (v: string) => { input.value = v; },
     cycle,
     random,
+    setAllowNonUniversal: (b: boolean) => {
+      allowNonUniversal = b;
+      applyAllowState();
+    },
+    isPortable: (name: string) => PORTABLE_SET.has(name.trim().toLowerCase()),
   };
 }

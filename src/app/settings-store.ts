@@ -12,6 +12,7 @@ export type Settings = {
   customFg: string | null;
   customBg: string | null;
   widthSource: 'dom' | 'pretext';
+  allowNonUniversalFonts: boolean;
 };
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -22,10 +23,11 @@ export const DEFAULT_SETTINGS: Settings = {
   gamma: 1.0,
   contrast: 1.0,
   invert: true,
-  dither: false,
+  dither: true,
   customFg: null,
   customBg: null,
   widthSource: 'dom',
+  allowNonUniversalFonts: false,
 };
 
 export function loadSettings(): Settings {

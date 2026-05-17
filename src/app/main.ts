@@ -2,6 +2,8 @@ import "./styles.css";
 import { renderGlyphtone, type GlyphtoneResult } from "../core";
 import { CHAR_PRESETS } from "../data/char-presets";
 import { createFontPicker } from "./font-picker";
+import { buildGoogleFontsHref, findGoogleFont } from "../data/google-fonts";
+import { findMissingGlyphs } from "./font-coverage";
 import {
   DEFAULT_SETTINGS,
   loadSettings,
@@ -17,13 +19,19 @@ app.innerHTML = `
         <h1>Glyphtone</h1>
         <p class="hint">A halftone made of glyphs. Drop an image anywhere to begin.</p>
 
-        <label>Input Image</label>
+        <div class="label-row">
+          <label for="imageInput">Input Image</label>
+          <button class="tip-btn" type="button" id="inputImageTipBtn" aria-expanded="false" aria-controls="inputImageTip">ⓘ Tips</button>
+        </div>
+        <div class="tip-box" id="inputImageTip" hidden>To prepare a good input image, remove the background and exaggerate shadows. If you're using generative AI, try a prompt like: <em>Take this headshot and prepare it for print making. Make it grayscale. Remove the background behind the person entirely and make it pure black. For each area of shadow on the portrait figure, bring the darks to full grey. Leave the highlights and midtones of the portrait as-is.</em></div>
         <input type="file" id="imageInput" accept="image/*" />
         <button class="secondary" id="loadExampleBtn" type="button">Load Example Image</button>
 
         <label>Font Family</label>
         <div id="fontPickerMount"></div>
-        <div class="hint" id="fontHint">Type to filter, or click Browse ▾ to search all fonts.</div>
+        <div class="hint" id="fontHint">Restricted to system-safe fonts plus curated Google Fonts — exports include the @font-face link so viewers see the same thing.</div>
+        <div class="hint warn" id="fontWarn" style="display:none"></div>
+        <label class="checkrow"><input type="checkbox" id="allowNonUniversal" /> Allow custom fonts (may not render for viewers)</label>
 
         <label>Font Size (px) <span class="value" id="fontSizeVal"></span></label>
         <input type="range" id="fontSize" min="6" max="48" />
@@ -110,19 +118,113 @@ const previewArea = $("previewArea");
 const dropHint = $("dropHint");
 const status = $("status");
 
+// Input image tooltip — hover (desktop) + tap toggle (mobile)
+{
+  const tipBtn = $<HTMLButtonElement>("inputImageTipBtn");
+  const tipBox = $("inputImageTip");
+  let leaveTimer: ReturnType<typeof setTimeout> | null = null;
+  let pinned = false;
+
+  function show() {
+    if (leaveTimer) { clearTimeout(leaveTimer); leaveTimer = null; }
+    tipBox.hidden = false;
+    tipBtn.setAttribute("aria-expanded", "true");
+  }
+  function hide() {
+    pinned = false;
+    tipBox.hidden = true;
+    tipBtn.setAttribute("aria-expanded", "false");
+  }
+
+  // Hover: show/hide only when not pinned open by a click
+  tipBtn.addEventListener("mouseenter", () => { if (!pinned) show(); });
+  tipBtn.addEventListener("mouseleave", () => { if (!pinned) leaveTimer = setTimeout(hide, 300); });
+  tipBox.addEventListener("mouseenter", () => { if (!pinned && leaveTimer) { clearTimeout(leaveTimer); leaveTimer = null; } });
+  tipBox.addEventListener("mouseleave", () => { if (!pinned) leaveTimer = setTimeout(hide, 300); });
+
+  // Click/tap: pin open; click again or click outside to close
+  tipBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (pinned) { hide(); } else { pinned = true; show(); }
+  });
+  document.addEventListener("click", () => { if (pinned) hide(); });
+}
+
 let settings = loadSettings();
 let sourceImage: HTMLImageElement | null = null;
+
+// Preload the curated Google Fonts so the picker, dropdown samples, and
+// preview render with the chosen face even before it would be used on the
+// page. Exports inject their own copy of this link (see buildExportHtml).
+const GOOGLE_FONTS_HREF = buildGoogleFontsHref();
+{
+  const link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.href = GOOGLE_FONTS_HREF;
+  document.head.appendChild(link);
+}
 
 // ---------- font picker ----------
 
 const picker = createFontPicker({
   initial: settings.fontFamily,
+  allowNonUniversal: settings.allowNonUniversalFonts,
   onChange: (font) => {
     settings.fontFamily = font;
+    syncFontWarning();
     persistAndRender();
   },
 });
 $("fontPickerMount").appendChild(picker.el);
+
+const fontWarn = $("fontWarn");
+let warningGen = 0;
+
+function renderWarning(messages: string[]) {
+  fontWarn.textContent = "";
+  for (const m of messages) {
+    const d = document.createElement("div");
+    d.textContent = m;
+    fontWarn.appendChild(d);
+  }
+  fontWarn.style.display = messages.length ? "" : "none";
+}
+
+function syncFontWarning() {
+  const gen = ++warningGen;
+  const msgs: string[] = [];
+  if (!picker.isPortable(settings.fontFamily)) {
+    msgs.push("⚠ This font may not be installed for viewers of the exported HTML — they'll see a fallback.");
+  }
+  // Show the portable-font warning immediately; coverage check needs the
+  // font loaded (Google Fonts load lazily) so it runs after fonts.load.
+  renderWarning(msgs);
+
+  const font = `${settings.fontSize}px "${settings.fontFamily}", serif`;
+  (async () => {
+    try { await document.fonts.load(font); } catch { /* offline — best-effort */ }
+    if (gen !== warningGen) return;
+    const missing = findMissingGlyphs(settings.fontFamily, settings.fontSize, settings.chars);
+    if (gen !== warningGen) return;
+    if (missing.length) {
+      const list = missing.join(" ");
+      msgs.push(
+        `⚠ This font doesn't cover ${missing.length} palette glyph${missing.length === 1 ? "" : "s"} (${list}) — those fall back per-glyph, which can make some rows visibly taller than others.`,
+      );
+      renderWarning(msgs);
+    }
+  })();
+}
+
+const allowNonUniversalEl = $<HTMLInputElement>("allowNonUniversal");
+allowNonUniversalEl.checked = settings.allowNonUniversalFonts;
+allowNonUniversalEl.addEventListener("change", () => {
+  settings.allowNonUniversalFonts = allowNonUniversalEl.checked;
+  picker.setAllowNonUniversal(allowNonUniversalEl.checked);
+  syncFontWarning();
+  persistAndRender();
+});
+syncFontWarning();
 
 // ---------- char preset dropdown ----------
 
@@ -143,6 +245,7 @@ presetSel.addEventListener("change", () => {
   if (v !== undefined) {
     settings.chars = v;
     ($("chars") as HTMLInputElement).value = v;
+    syncFontWarning();
     persistAndRender();
   }
 });
@@ -160,6 +263,7 @@ function applyPreset(name: string) {
   settings.chars = v;
   ($("chars") as HTMLInputElement).value = v;
   presetSel.value = name;
+  syncFontWarning();
 }
 
 function cyclePreset(dir: number) {
@@ -252,6 +356,9 @@ function applySettingsToUI() {
     if (b.valSpan) b.valSpan.textContent = b.format ? b.format(v) : String(v);
   }
   picker.setValue(settings.fontFamily);
+  picker.setAllowNonUniversal(settings.allowNonUniversalFonts);
+  allowNonUniversalEl.checked = settings.allowNonUniversalFonts;
+  syncFontWarning();
   syncPresetToChars();
   syncDisplayPanelUI();
   // widthSourceSel.value = settings.widthSource;
@@ -262,7 +369,12 @@ for (const b of bindings) {
     const v = b.el.type === "checkbox" ? b.el.checked : b.el.value;
     b.set(v);
     if (b.valSpan) b.valSpan.textContent = b.format ? b.format(v) : String(v);
-    if (b.el.id === "chars") syncPresetToChars();
+    if (b.el.id === "chars") {
+      syncPresetToChars();
+      syncFontWarning();
+    } else if (b.el.id === "fontSize") {
+      syncFontWarning();
+    }
     persistAndRender();
   });
 }
@@ -356,6 +468,15 @@ window.addEventListener("keydown", (e) => {
     e.preventDefault();
     randomizePreset();
     picker.random();
+    // Re-roll the font a few times to dodge uncovered-glyph combos (e.g.
+    // Noto Serif + Geometric fills). If the candidate font isn't loaded yet
+    // (Google Fonts are lazy) we can't measure coverage — accept the roll.
+    for (let i = 0; i < 6; i++) {
+      const spec = `${settings.fontSize}px "${settings.fontFamily}"`;
+      if (!document.fonts.check(spec)) break;
+      if (findMissingGlyphs(settings.fontFamily, settings.fontSize, settings.chars).length === 0) break;
+      picker.random();
+    }
     persistAndRender();
   }
 });
@@ -433,10 +554,14 @@ function persistAndRender() {
 
 async function render() {
   if (!sourceImage) return;
+  const font = `${settings.fontSize}px "${settings.fontFamily}", serif`;
+  // Force the woff2 fetch for @font-face fonts (Google Fonts only load on
+  // first use). Without this, the first render after picking a remote font
+  // measures glyph widths against the serif fallback and lays out wrong.
+  try { await document.fonts.load(font); } catch { /* offline / 404 — fall through */ }
   await document.fonts.ready;
   try {
     const t0 = performance.now();
-    const font = `${settings.fontSize}px "${settings.fontFamily}", serif`;
     const result = renderGlyphtone({
       source: sourceImage,
       font,
@@ -563,6 +688,14 @@ $("exportAnimHtmlBtn").addEventListener("click", () => {
   }, 0);
 });
 
+function googleFontsLinkTag(): string {
+  // Only emit if the selected family is one of the curated Google Fonts —
+  // otherwise the link is dead weight for the consumer.
+  return findGoogleFont(settings.fontFamily)
+    ? `<link rel="stylesheet" href="${GOOGLE_FONTS_HREF}">`
+    : "";
+}
+
 function buildAnimatedExportHtml(fromSize: number, toSize: number): string {
   const bg = effectiveBg();
   const fg = effectiveFg();
@@ -593,6 +726,7 @@ function buildAnimatedExportHtml(fromSize: number, toSize: number): string {
 <head>
 <meta charset="utf-8">
 <title>Glyphtone Animated</title>
+${googleFontsLinkTag()}
 <style>
   html, body { margin: 0; background: ${bg}; }
   body { min-height: 100vh; display: flex; align-items: center; justify-content: center; }
@@ -649,6 +783,7 @@ function buildExportHtml(): string {
 <head>
 <meta charset="utf-8">
 <title>Glyphtone</title>
+${googleFontsLinkTag()}
 <style>
   html, body { margin: 0; background: ${bg}; }
   body { min-height: 100vh; display: flex; align-items: center; justify-content: center; }
