@@ -15,6 +15,7 @@ export const CHAR_PRESETS: Record<string, string> = {
   "Runes (futhark)": "ᚠᚢᚦᚨᚱᚲᚷᚹᚺᚾᛁ· ",
   Currency: "€£¥₩₪₹$¢. ",
   "Winter Emoji": "❄️🌨️⛄🏔️🧊🌬️❄️⛷️🀩 ",
+  "Color Emoji": "❤️💙💚🖤💛💜🧡🤍🩵🩶",
   "Block halftone": "█▓▒░ ",
   "Bar ramp": "█▇▆▅▄▃▂▁ ",
   "Braille blocks": "⣿⣷⣯⣟⡿⢿⣻⣽ ",

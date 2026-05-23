@@ -71,12 +71,23 @@ export function measureGlyphPalette(
     const qN = [0, 0, 0, 0];
     const halfW = pxW / 2;
     const halfH = pxH / 2;
+    // Ink-weighted color accumulators. Cell is filled white, then the glyph is
+    // painted on top — so each pixel's RGB is whatever the emoji painted there
+    // (white where the glyph is transparent). Weighting by ink (1 - luma)
+    // averages over the painted pixels only, ignoring the white background.
+    let inkR = 0, inkG = 0, inkB = 0;
     for (let py = 0; py < pxH; py++) {
       for (let px = 0; px < pxW; px++) {
         const off = (py * pxW + px) * 4;
-        const luma = (0.299 * data[off] + 0.587 * data[off + 1] + 0.114 * data[off + 2]) / 255;
+        const r = data[off] / 255;
+        const g = data[off + 1] / 255;
+        const b = data[off + 2] / 255;
+        const luma = 0.299 * r + 0.587 * g + 0.114 * b;
         const ink = 1 - luma;
         inkSum += ink;
+        inkR += r * ink;
+        inkG += g * ink;
+        inkB += b * ink;
         const qi = (py < halfH ? 0 : 2) + (px < halfW ? 0 : 1);
         qInk[qi] += ink;
         qN[qi]++;
@@ -90,7 +101,10 @@ export function measureGlyphPalette(
       qDens[2] - density,
       qDens[3] - density,
     ];
-    glyphs.push({ char: ch, width, density, densityNorm: 0, quadrantSig });
+    const avgColor = inkSum > 1e-6
+      ? { r: inkR / inkSum, g: inkG / inkSum, b: inkB / inkSum }
+      : { r: 1, g: 1, b: 1 };
+    glyphs.push({ char: ch, width, density, densityNorm: 0, quadrantSig, avgColor });
   }
 
   const dMin = Math.min(...glyphs.map(g => g.density));

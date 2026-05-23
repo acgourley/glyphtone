@@ -31,7 +31,12 @@ export function createFontPicker(opts: FontPickerOpts): FontPicker {
 
   function computeFontList(): string[] {
     if (!allowNonUniversal) return [...PORTABLE_FONTS];
-    return browsedAll ?? installedDefaults;
+    // Custom-fonts mode is additive: keep the portable set visible and add
+    // whatever local fonts the user has, so flipping the toggle never hides
+    // an option they already had access to.
+    const extra = browsedAll ?? installedDefaults;
+    const merged = new Set<string>([...PORTABLE_FONTS, ...extra]);
+    return [...merged];
   }
   let activeIdx = -1;
   let preBrowseValue = '';

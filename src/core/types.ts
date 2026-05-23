@@ -6,6 +6,11 @@ export type Glyph = {
   // Per-quadrant ink coverage minus overall density — a centered spatial
   // signature in roughly [-1, 1]. Order: TL, TR, BL, BR.
   quadrantSig: [number, number, number, number];
+  // Ink-weighted average color of the rasterized glyph, in 0..1 RGB.
+  // For monochrome glyphs this is near-black; for color emoji it's the
+  // glyph's actual chroma (red for 🍎, yellow for 🌟, etc.). When the glyph
+  // has no ink (e.g. space) this is (1, 1, 1).
+  avgColor: { r: number; g: number; b: number };
 };
 
 export type Palette = {
@@ -45,6 +50,12 @@ export type GlyphtoneOptions = {
   // glyphs that are only a marginally better brightness match. Useful for
   // sets like "◤◥◢◣" where every glyph has the same overall density.
   spatialWeight?: number;
+  // Mixes source-vs-glyph chroma matching into glyph selection. 0 = ignore
+  // color (current behavior). Higher values let, e.g., red emoji prefer red
+  // regions of the source over similarly-dense non-red emoji. Density still
+  // dominates the silhouette — chroma is a tiebreaker among candidates that
+  // already match brightness. Has no effect for monochrome charsets.
+  chromaWeight?: number;
   dither?: boolean;
   background?: string;
   foreground?: string;

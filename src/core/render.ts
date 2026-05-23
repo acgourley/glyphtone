@@ -20,6 +20,7 @@ export function renderGlyphtone(opts: GlyphtoneOptions): GlyphtoneResult {
     foreground = '#eee',
     glyphColor,
     spatialWeight = 2,
+    chromaWeight = 0,
     dither = false,
   } = opts;
 
@@ -38,7 +39,7 @@ export function renderGlyphtone(opts: GlyphtoneOptions): GlyphtoneResult {
     return { glyphsPlaced: 0, lineHeight: 0, paletteSize: 0, placements: [] };
   }
 
-  const includeColor = !!glyphColor;
+  const includeColor = !!glyphColor || chromaWeight > 0;
   const integral = buildIntegralImage(sourceData, includeColor);
   const lineHeight = computeLineHeight(font, fontSize);
   const placements: GlyphPlacement[] = [];
@@ -99,6 +100,8 @@ export function renderGlyphtone(opts: GlyphtoneOptions): GlyphtoneResult {
       let lastProbeRight = -1;
       let cellSigTL = 0, cellSigTR = 0, cellSigBL = 0, cellSigBR = 0;
       let cellOverallB = 0;
+      let cellR = 0, cellG = 0, cellB = 0;
+      let lastChromaProbeRight = -1;
       for (const cand of palette.glyphs) {
         const fits = x + cand.width <= outW + 0.5;
         if (!fits && cand !== blankGlyph) continue;
@@ -139,6 +142,57 @@ export function renderGlyphtone(opts: GlyphtoneOptions): GlyphtoneResult {
           const dBR = cand.quadrantSig[3] - cellSigBR;
           const spatialErr = (dTL * dTL + dTR * dTR + dBL * dBL + dBR * dBR) / 4;
           err += spatialWeight * spatialErr;
+        }
+        if (chromaWeight > 0 && integral.red && integral.green && integral.blue) {
+          if (probeRight !== lastChromaProbeRight) {
+            const x0c = x * sx;
+            const y0c = y * sy;
+            const x1c = probeRight * sx;
+            const y1c = (y + lineHeight) * sy;
+            cellR = averageOver(integral.red, x0c, y0c, x1c, y1c);
+            cellG = averageOver(integral.green, x0c, y0c, x1c, y1c);
+            cellB = averageOver(integral.blue, x0c, y0c, x1c, y1c);
+            lastChromaProbeRight = probeRight;
+          }
+          // Compare chroma DIRECTION (cosine), not magnitude. We want a faintly
+          // green source pixel (small chroma magnitude, green-ish direction) to
+          // match a saturated 💚 (large magnitude, same direction) — magnitude
+          // distance would instead prefer monochrome glyphs whose tiny chroma
+          // magnitude matches the source's tiny magnitude better. Luma drops
+          // out via (channel - Y); density already handles brightness.
+          const cellY = 0.299 * cellR + 0.587 * cellG + 0.114 * cellB;
+          const gY = 0.299 * cand.avgColor.r + 0.587 * cand.avgColor.g + 0.114 * cand.avgColor.b;
+          const ccR = cellR - cellY, ccG = cellG - cellY, ccBl = cellB - cellY;
+          const gcR = cand.avgColor.r - gY, gcG = cand.avgColor.g - gY, gcB = cand.avgColor.b - gY;
+          const cellMag = Math.sqrt(ccR * ccR + ccG * ccG + ccBl * ccBl);
+          const candMag = Math.sqrt(gcR * gcR + gcG * gcG + gcB * gcB);
+          // Two regimes:
+          //   - "Colored" regime (both have meaningful chroma): direction-only
+          //     comparison via cosine — magnitudes don't matter, so a faint
+          //     green cell still matches saturated 💚. Glyphs with the wrong
+          //     hue are heavily penalized.
+          //   - "Neutral" regime (at least one side has weak chroma):
+          //     penalize by the larger magnitude — a saturated glyph in a
+          //     near-gray cell, or a gray glyph in a saturated cell, both get
+          //     a magnitude-proportional penalty.
+          // We blend smoothly between regimes by the *weaker* magnitude so a
+          // faintly-tinted "white" (cellMag tiny) doesn't trigger direction
+          // matching against any saturated glyph that happens to point the
+          // right way.
+          let colorErr = 0; // direction mismatch, defined when both have chroma
+          if (cellMag > 1e-6 && candMag > 1e-6) {
+            const cos = (ccR * gcR + ccG * gcG + ccBl * gcB) / (cellMag * candMag);
+            colorErr = (1 - cos) / 2; // [0,1]: 0 same hue, 1 opposite
+          } else {
+            colorErr = 1; // one side has no direction — treat as full mismatch
+          }
+          const neutralErr = Math.max(cellMag, candMag); // mag of whichever side is colored
+          // SAT_THRESH ~= where chroma starts to feel "colored" vs "tinted gray".
+          // 0.05 is roughly the chroma magnitude of a pale pastel.
+          const SAT_THRESH = 0.05;
+          const t = Math.min(1, Math.min(cellMag, candMag) / SAT_THRESH);
+          const chromaErr = (1 - t) * neutralErr + t * colorErr;
+          err += chromaWeight * chromaErr;
         }
         if (err < bestErr) {
           bestErr = err;

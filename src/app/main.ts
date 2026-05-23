@@ -58,6 +58,10 @@ app.innerHTML = `
         <label>Contrast <span class="value" id="contrastVal"></span></label>
         <input type="range" id="contrast" min="0.5" max="3.0" step="0.05" />
 
+        <label>Chroma Match <span class="value" id="chromaWeightVal"></span></label>
+        <input type="range" id="chromaWeight" min="0" max="50" step="0.5" />
+        <div class="hint">For color charsets (emoji): prefer glyphs whose color matches the source region. 0 disables.</div>
+
         <label class="checkrow"><input type="checkbox" id="invert" /> Invert</label>
         <label class="checkrow"><input type="checkbox" id="dither" /> Floyd-Steinberg Dithering</label>
 
@@ -397,6 +401,13 @@ const bindings: Binding[] = [
     format: (v) => Number(v).toFixed(2),
   },
   {
+    el: $<HTMLInputElement>("chromaWeight"),
+    get: () => settings.chromaWeight,
+    set: (v) => (settings.chromaWeight = +v),
+    valSpan: $("chromaWeightVal"),
+    format: (v) => Number(v).toFixed(1),
+  },
+  {
     el: $<HTMLInputElement>("invert"),
     get: () => settings.invert,
     set: (v) => (settings.invert = !!v),
@@ -581,10 +592,25 @@ function loadImageFromDataUrl(dataUrl: string, save: boolean) {
     sourceImage = img;
     dropHint.style.display = "none";
     if (save) {
+      const sizeKB = Math.round(dataUrl.length / 1024);
+      console.log(`[glyphtone] image dataUrl size: ${sizeKB} KB`);
       try {
         localStorage.setItem("glyphtone.image.v1", dataUrl);
-      } catch {
-        // quota exceeded — image too large to persist
+        const stored = localStorage.getItem("glyphtone.image.v1");
+        if (stored) {
+          console.log(`[glyphtone] image saved to localStorage OK (${sizeKB} KB)`);
+        } else {
+          console.warn("[glyphtone] localStorage.setItem did not throw but getItem returned null — storage may be full");
+        }
+      } catch (e) {
+        console.error(`[glyphtone] failed to save image to localStorage (${sizeKB} KB):`, e);
+        // Log current localStorage usage for diagnosis
+        let totalKB = 0;
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i)!;
+          totalKB += (localStorage.getItem(key)?.length ?? 0) / 1024;
+        }
+        console.error(`[glyphtone] current localStorage usage: ~${Math.round(totalKB)} KB across ${localStorage.length} keys`);
       }
     }
     render();
@@ -627,6 +653,7 @@ async function render() {
       contrast: settings.contrast,
       invert: settings.invert,
       dither: settings.dither,
+      chromaWeight: settings.chromaWeight,
       background: effectiveBg(),
       foreground: effectiveFg(),
       // widthSource: settings.widthSource,
@@ -688,6 +715,7 @@ $("downloadBtn").addEventListener("click", () => {
     contrast: settings.contrast,
     invert: settings.invert,
     dither: settings.dither,
+    chromaWeight: settings.chromaWeight,
     background: effectiveBg(),
     foreground: effectiveFg(),
   });
@@ -773,6 +801,7 @@ function buildAnimatedExportHtml(fromSize: number, toSize: number): string {
       contrast: settings.contrast,
       invert: settings.invert,
       dither: settings.dither,
+      chromaWeight: settings.chromaWeight,
       background: bg,
       foreground: fg,
     });
@@ -956,7 +985,9 @@ applySettingsToUI();
 
 const savedImage = localStorage.getItem("glyphtone.image.v1");
 if (savedImage) {
+  console.log(`[glyphtone] restoring saved image from localStorage (${Math.round(savedImage.length / 1024)} KB)`);
   loadImageFromDataUrl(savedImage, false);
 } else {
+  console.log("[glyphtone] no saved image in localStorage, loading example");
   loadExampleImage(false);
 }
