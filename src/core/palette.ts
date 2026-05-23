@@ -1,6 +1,6 @@
 // Pretext-based width measurement is disabled — see measureWidthsViaPretext below.
 // import { prepareWithSegments } from '@chenglou/pretext';
-import type { Glyph, Palette, WidthSource } from './types';
+import type { Color, Glyph, Palette, WidthSource } from './types';
 
 // Creates a small offscreen canvas. Caller-injectable so the core stays DOM-agnostic
 // in principle, but defaults to the browser-side OffscreenCanvas.
@@ -11,6 +11,8 @@ export function measureGlyphPalette(
   chars: string,
   font: string,
   fontSize: number,
+  background: string,
+  foreground: string,
   canvasFactory: CanvasFactory = defaultCanvasFactory,
   widthSource: WidthSource = 'dom',
 ): Palette {
@@ -53,66 +55,52 @@ export function measureGlyphPalette(
     const ch = unique[i];
     const width = widths[i] || fontSize * 0.5;
 
-    mctx.fillStyle = 'white';
+    // Rasterize against the ACTUAL output bg with the ACTUAL output fg. Each
+    // pixel's RGB is then literally "how this part of the cell will look in
+    // the final image" — for monochrome glyphs that's a coverage-weighted
+    // blend of bg and fg; for color emoji (which ignore fillStyle and paint
+    // native) it's emoji colors over bg where the emoji is transparent.
+    mctx.fillStyle = background;
     mctx.fillRect(0, 0, cellW, cellH);
-    mctx.fillStyle = 'black';
+    mctx.fillStyle = foreground;
     mctx.fillText(ch, 0, fontSize * 0.2);
 
     const pxW = Math.max(1, Math.min(cellW, Math.ceil(width)));
     const pxH = Math.max(1, Math.min(cellH, Math.ceil(fontSize * 1.4)));
     const data = mctx.getImageData(0, 0, pxW, pxH).data;
-    // Density = 1 - perceived luminance, averaged over the cell. Uses Rec.601
-    // luma on all three channels so color emoji (painted in their native
-    // colors, ignoring fillStyle) rank by how dark they actually look — not
-    // just by red-channel coverage.
-    let inkSum = 0;
-    // Quadrant ink sums and pixel counts (TL, TR, BL, BR).
-    const qInk = [0, 0, 0, 0];
+
+    let sumR = 0, sumG = 0, sumB = 0;
+    const qR = [0, 0, 0, 0];
+    const qG = [0, 0, 0, 0];
+    const qB = [0, 0, 0, 0];
     const qN = [0, 0, 0, 0];
     const halfW = pxW / 2;
     const halfH = pxH / 2;
-    // Ink-weighted color accumulators. Cell is filled white, then the glyph is
-    // painted on top — so each pixel's RGB is whatever the emoji painted there
-    // (white where the glyph is transparent). Weighting by ink (1 - luma)
-    // averages over the painted pixels only, ignoring the white background.
-    let inkR = 0, inkG = 0, inkB = 0;
     for (let py = 0; py < pxH; py++) {
       for (let px = 0; px < pxW; px++) {
         const off = (py * pxW + px) * 4;
         const r = data[off] / 255;
         const g = data[off + 1] / 255;
         const b = data[off + 2] / 255;
-        const luma = 0.299 * r + 0.587 * g + 0.114 * b;
-        const ink = 1 - luma;
-        inkSum += ink;
-        inkR += r * ink;
-        inkG += g * ink;
-        inkB += b * ink;
+        sumR += r; sumG += g; sumB += b;
         const qi = (py < halfH ? 0 : 2) + (px < halfW ? 0 : 1);
-        qInk[qi] += ink;
+        qR[qi] += r; qG[qi] += g; qB[qi] += b;
         qN[qi]++;
       }
     }
-    const density = inkSum / (pxW * pxH);
-    const qDens = qInk.map((s, i) => (qN[i] > 0 ? s / qN[i] : density));
-    const quadrantSig: [number, number, number, number] = [
-      qDens[0] - density,
-      qDens[1] - density,
-      qDens[2] - density,
-      qDens[3] - density,
+    const n = pxW * pxH;
+    const displayColor: Color = { r: sumR / n, g: sumG / n, b: sumB / n };
+    const quadrantColors: [Color, Color, Color, Color] = [
+      qN[0] > 0 ? { r: qR[0]/qN[0], g: qG[0]/qN[0], b: qB[0]/qN[0] } : displayColor,
+      qN[1] > 0 ? { r: qR[1]/qN[1], g: qG[1]/qN[1], b: qB[1]/qN[1] } : displayColor,
+      qN[2] > 0 ? { r: qR[2]/qN[2], g: qG[2]/qN[2], b: qB[2]/qN[2] } : displayColor,
+      qN[3] > 0 ? { r: qR[3]/qN[3], g: qG[3]/qN[3], b: qB[3]/qN[3] } : displayColor,
     ];
-    const avgColor = inkSum > 1e-6
-      ? { r: inkR / inkSum, g: inkG / inkSum, b: inkB / inkSum }
-      : { r: 1, g: 1, b: 1 };
-    glyphs.push({ char: ch, width, density, densityNorm: 0, quadrantSig, avgColor });
+
+    glyphs.push({ char: ch, width, displayColor, quadrantColors });
   }
 
-  const dMin = Math.min(...glyphs.map(g => g.density));
-  const dMax = Math.max(...glyphs.map(g => g.density));
-  const range = Math.max(1e-6, dMax - dMin);
-  for (const g of glyphs) g.densityNorm = (g.density - dMin) / range;
-
-  return { glyphs, font, fontSize };
+  return { glyphs, font, fontSize, background, foreground };
 }
 
 function measureWidthsViaDom(chars: string[], font: string): number[] {

@@ -58,11 +58,6 @@ app.innerHTML = `
         <label>Contrast <span class="value" id="contrastVal"></span></label>
         <input type="range" id="contrast" min="0.5" max="3.0" step="0.05" />
 
-        <label>Chroma Match <span class="value" id="chromaWeightVal"></span></label>
-        <input type="range" id="chromaWeight" min="0" max="50" step="0.5" />
-        <div class="hint">For color charsets (emoji): prefer glyphs whose color matches the source region. 0 disables.</div>
-
-        <label class="checkrow"><input type="checkbox" id="invert" /> Invert</label>
         <label class="checkrow"><input type="checkbox" id="dither" /> Floyd-Steinberg Dithering</label>
 
         <div class="color-row">
@@ -401,18 +396,6 @@ const bindings: Binding[] = [
     format: (v) => Number(v).toFixed(2),
   },
   {
-    el: $<HTMLInputElement>("chromaWeight"),
-    get: () => settings.chromaWeight,
-    set: (v) => (settings.chromaWeight = +v),
-    valSpan: $("chromaWeightVal"),
-    format: (v) => Number(v).toFixed(1),
-  },
-  {
-    el: $<HTMLInputElement>("invert"),
-    get: () => settings.invert,
-    set: (v) => (settings.invert = !!v),
-  },
-  {
     el: $<HTMLInputElement>("dither"),
     get: () => settings.dither,
     set: (v) => (settings.dither = !!v),
@@ -651,9 +634,7 @@ async function render() {
       outWidth: settings.outWidth,
       gamma: settings.gamma,
       contrast: settings.contrast,
-      invert: settings.invert,
       dither: settings.dither,
-      chromaWeight: settings.chromaWeight,
       background: effectiveBg(),
       foreground: effectiveFg(),
       // widthSource: settings.widthSource,
@@ -713,9 +694,7 @@ $("downloadBtn").addEventListener("click", () => {
     outWidth: settings.outWidth,
     gamma: settings.gamma,
     contrast: settings.contrast,
-    invert: settings.invert,
     dither: settings.dither,
-    chromaWeight: settings.chromaWeight,
     background: effectiveBg(),
     foreground: effectiveFg(),
   });
@@ -799,9 +778,7 @@ function buildAnimatedExportHtml(fromSize: number, toSize: number): string {
       outWidth: settings.outWidth,
       gamma: settings.gamma,
       contrast: settings.contrast,
-      invert: settings.invert,
       dither: settings.dither,
-      chromaWeight: settings.chromaWeight,
       background: bg,
       foreground: fg,
     });

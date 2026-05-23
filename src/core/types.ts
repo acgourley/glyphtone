@@ -1,22 +1,27 @@
+export type Color = { r: number; g: number; b: number };
+
 export type Glyph = {
   char: string;
   width: number;
-  density: number;       // raw 0..1 ink coverage
-  densityNorm: number;   // normalized within the palette
-  // Per-quadrant ink coverage minus overall density — a centered spatial
-  // signature in roughly [-1, 1]. Order: TL, TR, BL, BR.
-  quadrantSig: [number, number, number, number];
-  // Ink-weighted average color of the rasterized glyph, in 0..1 RGB.
-  // For monochrome glyphs this is near-black; for color emoji it's the
-  // glyph's actual chroma (red for 🍎, yellow for 🌟, etc.). When the glyph
-  // has no ink (e.g. space) this is (1, 1, 1).
-  avgColor: { r: number; g: number; b: number };
+  // RGB color the cell will look like when rendered in the final output —
+  // i.e. the glyph painted onto the actual bg color with fillStyle=fg. Already
+  // encodes ink coverage AND the fg/bg context, so there's no separate
+  // "density" term. For a sparse glyph this is near-bg; for a dense glyph,
+  // near-fg; for a color emoji, the emoji's native colors blended with bg.
+  displayColor: Color;
+  // Per-quadrant displayColor (TL, TR, BL, BR). Used for spatial matching —
+  // e.g. a glyph whose top is bright matches a source whose top is bright.
+  quadrantColors: [Color, Color, Color, Color];
 };
 
 export type Palette = {
   glyphs: Glyph[];
   font: string;          // CSS font string used for measurement
   fontSize: number;
+  // bg/fg the palette was measured against — palette must be remeasured if
+  // either changes, since they're baked into displayColor.
+  background: string;
+  foreground: string;
 };
 
 export type GlyphPlacement = {
@@ -42,19 +47,16 @@ export type GlyphtoneOptions = {
   outWidth?: number;
   gamma?: number;
   contrast?: number;
-  invert?: boolean;
   weightByWidth?: boolean;
-  // Mixes spatial-pattern matching into glyph selection. 0 = brightness
-  // only (current behavior); higher values let glyphs whose ink lives in
-  // the same corner/edge as the source's brightness pattern win out over
-  // glyphs that are only a marginally better brightness match. Useful for
-  // sets like "◤◥◢◣" where every glyph has the same overall density.
+  // Spatial-pattern matching: prefer glyphs whose per-quadrant brightness
+  // pattern matches the source cell's per-quadrant brightness pattern. Useful
+  // for charsets like "◤◥◢◣" where every glyph has the same overall density.
   spatialWeight?: number;
-  // Mixes source-vs-glyph chroma matching into glyph selection. 0 = ignore
-  // color (current behavior). Higher values let, e.g., red emoji prefer red
-  // regions of the source over similarly-dense non-red emoji. Density still
-  // dominates the silhouette — chroma is a tiebreaker among candidates that
-  // already match brightness. Has no effect for monochrome charsets.
+  // Color matching weight. Selection always compares glyph displayColor to
+  // source pixel color; chromaWeight scales the chroma (hue/saturation)
+  // component relative to luma. 0 = pure luma matching; 1 = chroma weighted
+  // equally with luma; higher = chroma dominates. Has no effect for fully
+  // monochrome charsets (no glyph has any chroma to match).
   chromaWeight?: number;
   dither?: boolean;
   background?: string;

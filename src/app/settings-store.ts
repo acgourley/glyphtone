@@ -1,4 +1,7 @@
-const KEY = 'glyphtone.settings.v1';
+// v2 = unified display-color matching model (invert + chromaWeight removed,
+// fg/bg context baked into glyph matching). Old v1 settings are intentionally
+// discarded so users get sensible new defaults.
+const KEY = 'glyphtone.settings.v2';
 
 export type Settings = {
   fontFamily: string;
@@ -7,9 +10,7 @@ export type Settings = {
   chars: string;
   gamma: number;
   contrast: number;
-  invert: boolean;
   dither: boolean;
-  chromaWeight: number;
   customFg: string | null;
   customBg: string | null;
   widthSource: 'dom' | 'pretext';
@@ -23,9 +24,7 @@ export const DEFAULT_SETTINGS: Settings = {
   chars: '∑∏∫∆∇∂∞∩∪⊂⊃∈· ',
   gamma: 1.0,
   contrast: 1.0,
-  invert: true,
   dither: true,
-  chromaWeight: 0,
   customFg: null,
   customBg: null,
   widthSource: 'dom',
